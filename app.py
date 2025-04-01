@@ -6,7 +6,6 @@ import subprocess
 
 app = Flask(__name__)
 
-# Путь к файлу cookies
 COOKIES_FILE = 'youtube_cookies.txt'
 
 @app.route('/')
@@ -28,19 +27,21 @@ def download():
     except (subprocess.CalledProcessError, FileNotFoundError):
         return jsonify({'error': 'FFmpeg не установлен или не найден'}), 500
 
+    # Проверка наличия cookies
+    if not os.path.exists(COOKIES_FILE):
+        return jsonify({'error': f'Файл cookies {COOKIES_FILE} не найден'}), 500
+
     download_dir = 'downloads'
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Настройки для yt-dlp
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
-        'ffmpeg_location': 'ffmpeg',
-        'cookiefile': COOKIES_FILE,  # Передача cookies
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',  # Добавлен User-Agent
+        'cookiefile': COOKIES_FILE,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',
     }
 
     if format == 'mp4':
