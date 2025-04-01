@@ -21,18 +21,6 @@
             margin: 5px;
             cursor: pointer;
         }
-        #progress-container {
-            width: 300px;
-            margin-top: 20px;
-        }
-        #progress-bar {
-            width: 100%;
-            height: 20px;
-        }
-        #progress-text {
-            text-align: center;
-            margin-top: 5px;
-        }
     </style>
 </head>
 <body>
@@ -41,10 +29,6 @@
     <br>
     <button onclick="download('mp4')">Скачать MP4</button>
     <button onclick="download('mp3')">Скачать MP3</button>
-    <div id="progress-container">
-        <progress id="progress-bar" value="0" max="100"></progress>
-        <div id="progress-text">0%</div>
-    </div>
 
     <script>
         async function download(format) {
@@ -53,21 +37,6 @@
                 alert('Пожалуйста, введите ссылку!');
                 return;
             }
-
-            // Сброс прогресса
-            document.getElementById('progress-bar').value = 0;
-            document.getElementById('progress-text').textContent = '0%';
-
-            // Подключение к SSE для прогресса
-            const eventSource = new EventSource('/progress');
-            eventSource.onmessage = function(event) {
-                const percentage = parseFloat(event.data);
-                document.getElementById('progress-bar').value = percentage;
-                document.getElementById('progress-text').textContent = `${percentage.toFixed(2)}%`;
-                if (percentage >= 100) {
-                    eventSource.close();
-                }
-            };
 
             try {
                 const response = await fetch('/download', {
@@ -96,7 +65,6 @@
                 document.body.removeChild(downloadLink);
             } catch (error) {
                 alert('Произошла ошибка: ' + error.message);
-                eventSource.close();
             }
         }
     </script>
