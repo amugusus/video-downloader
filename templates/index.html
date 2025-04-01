@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Скачать видео или аудио</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+        input {
+            width: 300px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Вставьте ссылку на видео</h1>
+    <input type="text" id="videoUrl" placeholder="Например: https://www.youtube.com/watch?v=example">
+    <br>
+    <button onclick="download('mp4')">Скачать MP4</button>
+    <button onclick="download('mp3')">Скачать MP3</button>
+
+    <script>
+        async function download(format) {
+            const url = document.getElementById('videoUrl').value.trim();
+            if (!url) {
+                alert('Пожалуйста, введите ссылку!');
+                return;
+            }
+
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, format: format })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Неизвестная ошибка на сервере');
+                }
+
+                const blob = await response.blob();
+                const downloadLink = document.createElement('a');
+                downloadLink.href = window.URL.createObjectURL(blob);
+                downloadLink.download = `downloaded_file.${format}`;
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            } catch (error) {
+                alert('Произошла ошибка: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
