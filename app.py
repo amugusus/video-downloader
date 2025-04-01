@@ -6,6 +6,9 @@ import subprocess
 
 app = Flask(__name__)
 
+# Путь к файлу cookies (будет на сервере)
+COOKIES_FILE = 'youtube_cookies.txt'
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -33,8 +36,8 @@ def download():
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
-        'ffmpeg_location': '/usr/bin/ffmpeg',
-        'cookies': 'youtube_cookies.txt',  # Используем cookies
+        'ffmpeg_location': 'ffmpeg',
+        'cookiefile': COOKIES_FILE,  # Передаём cookies
     }
 
     if format == 'mp4':
@@ -85,5 +88,4 @@ def download():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000)
