@@ -91,8 +91,7 @@ def download():
     if format == 'mp4':
         ydl_opts.update({
             'format': 'bestvideo+bestaudio/best',
-            'merge_output_format': 'mp4',
-            'postprocessor_args': ['-c:v', 'libx264', '-c:a', 'aac'],  # Принудительное перекодирование для совместимости
+            'merge_output_format': 'mp4',  # Встроенное слияние через FFmpeg
         })
     elif format == 'mp3':
         ydl_opts.update({
@@ -110,7 +109,6 @@ def download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             title = info.get('title', 'unknown')
-            logger.info(f"Скачан файл: {title}.{format}")
 
         file_path = f'{download_dir}/{title}.{format}'
         if not os.path.exists(file_path):
