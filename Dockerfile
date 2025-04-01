@@ -1,7 +1,10 @@
 FROM python:3.9-slim
 
-# Устанавливаем FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg
+# Устанавливаем FFmpeg и зависимости
+RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
+
+# Проверяем, что FFmpeg установлен
+RUN ffmpeg -version
 
 # Копируем проект
 WORKDIR /app
