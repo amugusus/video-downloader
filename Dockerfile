@@ -10,6 +10,8 @@ COPY . .
 # Устанавливаем зависимости Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Запускаем приложение
+# Открываем порт (Render использует PORT из окружения)
 EXPOSE 5000
+
+# Запускаем приложение с привязкой к динамическому порту
 CMD ["gunicorn", "app:app", "--timeout", "600", "--bind", "0.0.0.0:5000"]
