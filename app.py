@@ -85,13 +85,14 @@ def download():
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
         },
-        'progress_hooks': [progress_hook],  # Добавляем отслеживание прогресса
+        'progress_hooks': [progress_hook],  # Отслеживание прогресса
     }
 
     if format == 'mp4':
         ydl_opts.update({
             'format': 'bestvideo+bestaudio/best',
-            'merge_output_format': 'mp4',  # Встроенное слияние через FFmpeg
+            'merge_output_format': 'mp4',
+            'postprocessor_args': ['-c:v', 'libx264', '-c:a', 'aac'],  # Принудительное перекодирование для совместимости
         })
     elif format == 'mp3':
         ydl_opts.update({
@@ -109,6 +110,7 @@ def download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             title = info.get('title', 'unknown')
+            logger.info(f"Скачан файл: {title}.{format}")
 
         file_path = f'{download_dir}/{title}.{format}'
         if not os.path.exists(file_path):
@@ -130,10 +132,6 @@ def download():
     except Exception as e:
         logger.error(f"Ошибка: {str(e)}")
         shutil.rmtree(download_dir, ignore_errors=True)
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
