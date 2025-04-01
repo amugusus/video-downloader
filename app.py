@@ -19,29 +19,29 @@ def download():
     if not url or not format:
         return jsonify({'error': 'URL или формат не указаны'}), 400
 
-    # Проверка FFmpeg
-    ffmpeg_path = shutil.which('ffmpeg')  # Ищем FFmpeg в PATH
-    if not ffmpeg_path:
-        return jsonify({'error': 'FFmpeg не установлен или не найден в PATH'}), 500
+    try:
+        subprocess.run(['ffmpeg', '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return jsonify({'error': 'FFmpeg не установлен или не найден'}), 500
 
     download_dir = 'downloads'
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
-    # Динамическое имя файла на основе названия видео
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
-        'ffmpeg_location': ffmpeg_path,  # Явно указываем путь к FFmpeg
+        'ffmpeg_location': '/usr/bin/ffmpeg',
+        'cookies': 'youtube_cookies.txt',  # Используем cookies
     }
 
     if format == 'mp4':
         ydl_opts.update({
-            'format': 'bestvideo+bestaudio/best',  # Лучшее видео + аудио
-            'merge_output_format': 'mp4',  # Слияние в MP4
-            'postprocessors': [{  # Явное слияние через FFmpeg
+            'format': 'bestvideo+bestaudio/best',
+            'merge_output_format': 'mp4',
+            'postprocessors': [{
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'mp4',
             }],
@@ -85,4 +85,5 @@ def download():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)  # debug=True для локальной отладки
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
