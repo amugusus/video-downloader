@@ -1,3 +1,5 @@
 flask
 yt-dlp
 gunicorn
+playwright
+apscheduler
