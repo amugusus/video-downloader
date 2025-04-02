@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 app = Flask(__name__)
 
 # Загружаем переменные из файла .env
-load_dotenv('/etc/secrets/.env')  # Путь, где Render монтирует Secret Files
+load_dotenv('/etc/secrets/.env')
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,40 +24,58 @@ COOKIES_FILE = 'youtube_cookies.txt'
 # Учетные данные из файла .env
 GOOGLE_USERNAME = os.getenv('GOOGLE_USERNAME')
 GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD')
-PROXY = os.getenv('PROXY')  # Опционально, если нужен прокси
+STATIC_PROXY = os.getenv('PROXY')  # Статический прокси для обновления cookies
 
 # Проверка наличия учетных данных
 if not GOOGLE_USERNAME or not GOOGLE_PASSWORD:
     logger.error("GOOGLE_USERNAME или GOOGLE_PASSWORD не заданы в файле .env")
     raise ValueError("GOOGLE_USERNAME и GOOGLE_PASSWORD должны быть заданы в файле .env")
 
-# Функция для обновления cookies с авторизацией
+# Функция для обновления cookies с авторизацией (использует статический прокси или серверный IP)
 def update_youtube_cookies():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            proxy_settings = None
+            if STATIC_PROXY:
+                if '@' in STATIC_PROXY:
+                    protocol_user_pass, host_port = STATIC_PROXY.split('@', 1)
+                    protocol, user_pass = protocol_user_pass.split('://', 1)
+                    username, password = user_pass.split(':', 1)
+                    host, port = host_port.split(':', 1)
+                    proxy_settings = {
+                        'server': f'{protocol}://{host}:{port}',
+                        'username': username,
+                        'password': password
+                    }
+                else:
+                    proxy_settings = {'server': STATIC_PROXY}
+                
             context = browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                proxy={'server': PROXY} if PROXY else None
+                proxy=proxy_settings
             )
             page = context.new_page()
 
-            # Переходим на страницу входа Google
-            page.goto('https://accounts.google.com/signin', wait_until='domcontentloaded')
-            page.wait_for_timeout(2000)
+            logger.info("Переход на страницу входа Google")
+            page.goto('https://accounts.google.com/signin', wait_until='domcontentloaded', timeout=60000)
+            page.wait_for_timeout(5000)
 
-            # Вводим логин
-            page.fill('input[type="email"]', GOOGLE_USERNAME)
-            page.click('#identifierNext')
-            page.wait_for_timeout(2000)
+            # Ввод логина
+            logger.info("Ввод логина")
+            page.fill('input[type="email"]', GOOGLE_USERNAME, timeout=60000)
+            page.click('button:has-text("Далее")', timeout=60000)
+            page.wait_for_timeout(5000)
 
-            # Вводим пароль
-            page.fill('input[type="password"]', GOOGLE_PASSWORD)
-            page.click('#passwordNext')
-            page.wait_for_timeout(5000)  # Ждем завершения входа
+            # Ввод пароля
+            logger.info("Ввод пароля")
+            page.fill('input[type="password"]', GOOGLE_PASSWORD, timeout=60000)
+            page.click('button:has-text("Далее")', timeout=60000)
+            page.wait_for_timeout(10000)
 
-            # Переходим на YouTube для получения cookies
-            page.goto('https://www.youtube.com', wait_until='domcontentloaded')
+            # Переход на YouTube
+            logger.info("Переход на YouTube")
+            page.goto('https://www.youtube.com', wait_until='domcontentloaded', timeout=60000)
             page.wait_for_timeout(5000)
 
             # Сохраняем cookies
@@ -74,10 +92,11 @@ def update_youtube_cookies():
 
 # Инициализация планировщика
 scheduler = BackgroundScheduler()
-scheduler.add_job(update_youtube_cookies, 'interval', hours=1)  # Обновление раз в час
+scheduler.add_job(update_youtube_cookies, 'interval', hours=1)
 scheduler.start()
 
-# Выполняем обновление cookies при старте приложения
+# Пробуем обновить cookies при старте
+logger.info("Попытка обновления cookies при старте")
 update_youtube_cookies()
 
 @app.route('/')
@@ -101,13 +120,21 @@ def download():
         logger.error("FFmpeg не найден")
         return jsonify({'error': 'FFmpeg не установлен или не найден'}), 500
 
+    # Получаем IP-адрес клиента из заголовков запроса
+    client_ip = request.remote_addr
+    logger.info(f"IP-адрес клиента: {client_ip}")
+
+    # Формируем прокси на основе IP клиента (предполагаем, что клиентский IP может быть использован как HTTP-прокси)
+    # Примечание: большинство клиентов не предоставляют прокси-сервер, поэтому это может не сработать напрямую
+    client_proxy = f"http://{client_ip}:80"  # Порт 80 по умолчанию, можно изменить
+
     download_dir = 'downloads'
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Настройки для yt-dlp
+    # Настройки для yt-dlp с использованием IP клиента как прокси
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
@@ -119,7 +146,7 @@ def download():
             'Accept-Language': 'en-US,en;q=0.5',
             'Referer': 'https://www.youtube.com/',
         },
-        'proxy': PROXY,
+        'proxy': client_proxy,  # Используем IP клиента как прокси
         'verbose': True,
         'retries': 10,
         'sleep_interval': 5,
