@@ -34,14 +34,14 @@ def download():
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Настройки для yt-dlp
+    # Базовые настройки для yt-dlp
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
         'ffmpeg_location': '/usr/bin/ffmpeg',  # Явный путь к FFmpeg в контейнере
         'cookiefile': COOKIES_FILE,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',
-        'http_headers': {  # Дополнительные заголовки для обхода защиты
+        'http_headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
         },
@@ -49,12 +49,20 @@ def download():
 
     if format == 'mp4':
         ydl_opts.update({
-            'format': 'bestvideo+bestaudio/best',
+            'format': 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best',  # Выбираем H.264 (avc1) и AAC (mp4a)
             'merge_output_format': 'mp4',
             'postprocessors': [{
                 'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
+                'preferedformat': 'mp4',  # Указываем выходной формат
             }],
+            'postprocessor_args': {  # Явно задаем кодеки для FFmpeg
+                'FFmpegVideoConvertor': [
+                    '-c:v', 'libx264',  # Видео: H.264
+                    '-preset', 'medium',  # Баланс скорости и качества
+                    '-c:a', 'aac',  # Аудио: AAC
+                    '-b:a', '192k',  # Битрейт аудио
+                ]
+            },
         })
     elif format == 'mp3':
         ydl_opts.update({
@@ -71,7 +79,7 @@ def download():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'unknown')
+            title = info.get('title', 'unknown').replace('/', '_').replace('\\', '_')  # Очищаем имя файла
 
         file_path = f'{download_dir}/{title}.{format}'
         if not os.path.exists(file_path):
@@ -92,3 +100,7 @@ def download():
 
     except Exception as e:
         shutil.rmtree(download_dir, ignore_errors=True)
+        return jsonify({'error': f'Ошибка при скачивании: {str(e)}'}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
