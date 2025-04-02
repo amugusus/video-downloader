@@ -4,15 +4,8 @@ import os
 import shutil
 import subprocess
 import logging
-from apscheduler.schedulers.background import BackgroundScheduler
-from playwright.sync_api import sync_playwright
-import time
-from dotenv import load_dotenv
 
 app = Flask(__name__)
-
-# Загружаем переменные из файла .env
-load_dotenv('/etc/secrets/.env')
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,92 +13,6 @@ logger = logging.getLogger(__name__)
 
 # Путь к файлу cookies
 COOKIES_FILE = 'youtube_cookies.txt'
-
-# Учетные данные из файла .env
-GOOGLE_USERNAME = os.getenv('GOOGLE_USERNAME')
-GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD')
-STATIC_PROXY = os.getenv('PROXY')  # Статический прокси для обновления cookies
-
-# Проверка наличия учетных данных
-if not GOOGLE_USERNAME or not GOOGLE_PASSWORD:
-    logger.error("GOOGLE_USERNAME или GOOGLE_PASSWORD не заданы в файле .env")
-    raise ValueError("GOOGLE_USERNAME и GOOGLE_PASSWORD должны быть заданы в файле .env")
-
-# Функция для обновления cookies с авторизацией (использует статический прокси или серверный IP)
-def update_youtube_cookies():
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--ignore-certificate-errors'])
-            proxy_settings = None
-            if STATIC_PROXY:
-                if '@' in STATIC_PROXY:
-                    protocol_user_pass, host_port = STATIC_PROXY.split('@', 1)
-                    protocol, user_pass = protocol_user_pass.split('://', 1)
-                    username, password = user_pass.split(':', 1)
-                    host, port = host_port.split(':', 1)
-                    proxy_settings = {
-                        'server': f'{protocol}://{host}:{port}',
-                        'username': username,
-                        'password': password
-                    }
-                else:
-                    proxy_settings = {'server': STATIC_PROXY}
-                
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                proxy=proxy_settings,
-                ignore_https_errors=True
-            )
-            page = context.new_page()
-
-            logger.info("Переход на страницу входа Google")
-            page.goto('https://accounts.google.com/signin', wait_until='domcontentloaded', timeout=120000)
-            page.wait_for_timeout(5000)
-
-            # Ввод логина
-            logger.info("Ввод логина")
-            email_input = page.locator('input[type="email"], input#identifierId')  # Более гибкий селектор
-            if not email_input.is_visible(timeout=120000):
-                logger.error("Поле ввода email не найдено")
-                page.screenshot(path="debug_login_page.png")  # Сохраняем скриншот для отладки
-                raise Exception("Поле ввода email не отображается")
-            email_input.fill(GOOGLE_USERNAME, timeout=120000)
-            page.click('button:has-text("Далее")', timeout=120000)
-            page.wait_for_timeout(5000)
-
-            # Ввод пароля
-            logger.info("Ввод пароля")
-            page.fill('input[type="password"]', GOOGLE_PASSWORD, timeout=120000)
-            page.click('button:has-text("Далее")', timeout=120000)
-            page.wait_for_timeout(10000)
-
-            # Переход на YouTube
-            logger.info("Переход на YouTube")
-            page.goto('https://www.youtube.com', wait_until='domcontentloaded', timeout=120000)
-            page.wait_for_timeout(5000)
-
-            # Сохраняем cookies
-            cookies = context.cookies()
-            with open(COOKIES_FILE, 'w') as f:
-                f.write('# Netscape HTTP Cookie File\n')
-                for cookie in cookies:
-                    f.write(f"{cookie['domain']}\tTRUE\t{cookie['path']}\t{'TRUE' if cookie['secure'] else 'FALSE'}\t{cookie['expires'] if cookie['expires'] else 0}\t{cookie['name']}\t{cookie['value']}\n")
-
-            logger.info("Cookies успешно обновлены с авторизацией")
-            browser.close()
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении cookies: {str(e)}")
-        if os.path.exists("debug_login_page.png"):
-            logger.info("Скриншот страницы сохранен как debug_login_page.png")
-
-# Инициализация планировщика
-scheduler = BackgroundScheduler()
-scheduler.add_job(update_youtube_cookies, 'interval', hours=1)
-scheduler.start()
-
-# Пробуем обновить cookies при старте
-logger.info("Попытка обновления cookies при старте")
-update_youtube_cookies()
 
 @app.route('/')
 def index():
@@ -134,23 +41,18 @@ def download():
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Настройки для yt-dlp
+    # Базовые настройки для yt-dlp
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
         'ffmpeg_location': '/usr/bin/ffmpeg',
         'cookiefile': COOKIES_FILE,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',
         'http_headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.youtube.com/',
         },
-        'proxy': STATIC_PROXY,
-        'no_check_certificate': True,  # Отключаем проверку SSL
-        'verbose': True,
-        'retries': 10,
-        'sleep_interval': 5,
+        'verbose': True,  # Для отладки в логах
     }
 
     if format == 'mp4':
