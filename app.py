@@ -6,8 +6,13 @@ import subprocess
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from playwright.sync_api import sync_playwright
+import time
+from dotenv import load_dotenv
 
 app = Flask(__name__)
+
+# Загружаем переменные из файла .env
+load_dotenv('/etc/secrets/.env')  # Путь, где Render монтирует Secret Files
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,36 +21,64 @@ logger = logging.getLogger(__name__)
 # Путь к файлу cookies
 COOKIES_FILE = 'youtube_cookies.txt'
 
-# Функция для обновления cookies
+# Учетные данные из файла .env
+GOOGLE_USERNAME = os.getenv('GOOGLE_USERNAME')
+GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD')
+PROXY = os.getenv('PROXY')  # Опционально, если нужен прокси
+
+# Проверка наличия учетных данных
+if not GOOGLE_USERNAME or not GOOGLE_PASSWORD:
+    logger.error("GOOGLE_USERNAME или GOOGLE_PASSWORD не заданы в файле .env")
+    raise ValueError("GOOGLE_USERNAME и GOOGLE_PASSWORD должны быть заданы в файле .env")
+
+# Функция для обновления cookies с авторизацией
 def update_youtube_cookies():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                proxy={'server': PROXY} if PROXY else None
             )
             page = context.new_page()
-            
-            # Переходим на YouTube и ждем загрузки
+
+            # Переходим на страницу входа Google
+            page.goto('https://accounts.google.com/signin', wait_until='domcontentloaded')
+            page.wait_for_timeout(2000)
+
+            # Вводим логин
+            page.fill('input[type="email"]', GOOGLE_USERNAME)
+            page.click('#identifierNext')
+            page.wait_for_timeout(2000)
+
+            # Вводим пароль
+            page.fill('input[type="password"]', GOOGLE_PASSWORD)
+            page.click('#passwordNext')
+            page.wait_for_timeout(5000)  # Ждем завершения входа
+
+            # Переходим на YouTube для получения cookies
             page.goto('https://www.youtube.com', wait_until='domcontentloaded')
-            page.wait_for_timeout(5000)  # Ждем 5 секунд для полной загрузки
-            
-            # Сохраняем cookies в файл в формате Netscape
+            page.wait_for_timeout(5000)
+
+            # Сохраняем cookies
             cookies = context.cookies()
             with open(COOKIES_FILE, 'w') as f:
                 f.write('# Netscape HTTP Cookie File\n')
                 for cookie in cookies:
                     f.write(f"{cookie['domain']}\tTRUE\t{cookie['path']}\t{'TRUE' if cookie['secure'] else 'FALSE'}\t{cookie['expires'] if cookie['expires'] else 0}\t{cookie['name']}\t{cookie['value']}\n")
-            
-            logger.info("Cookies успешно обновлены")
+
+            logger.info("Cookies успешно обновлены с авторизацией")
             browser.close()
     except Exception as e:
         logger.error(f"Ошибка при обновлении cookies: {str(e)}")
 
 # Инициализация планировщика
 scheduler = BackgroundScheduler()
-scheduler.add_job(update_youtube_cookies, 'interval', minutes=15)  # Обновление каждые 15 минут
+scheduler.add_job(update_youtube_cookies, 'interval', hours=1)  # Обновление раз в час
 scheduler.start()
+
+# Выполняем обновление cookies при старте приложения
+update_youtube_cookies()
 
 @app.route('/')
 def index():
@@ -84,9 +117,12 @@ def download():
         'http_headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.youtube.com/',  # Добавляем Referer для эмуляции браузера
+            'Referer': 'https://www.youtube.com/',
         },
+        'proxy': PROXY,
         'verbose': True,
+        'retries': 10,
+        'sleep_interval': 5,
     }
 
     if format == 'mp4':
