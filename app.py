@@ -4,6 +4,8 @@ import os
 import shutil
 import subprocess
 import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
@@ -13,6 +15,37 @@ logger = logging.getLogger(__name__)
 
 # Путь к файлу cookies
 COOKIES_FILE = 'youtube_cookies.txt'
+
+# Функция для обновления cookies
+def update_youtube_cookies():
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
+            
+            # Переходим на YouTube и ждем загрузки
+            page.goto('https://www.youtube.com', wait_until='domcontentloaded')
+            page.wait_for_timeout(5000)  # Ждем 5 секунд для полной загрузки
+            
+            # Сохраняем cookies в файл в формате Netscape
+            cookies = context.cookies()
+            with open(COOKIES_FILE, 'w') as f:
+                f.write('# Netscape HTTP Cookie File\n')
+                for cookie in cookies:
+                    f.write(f"{cookie['domain']}\tTRUE\t{cookie['path']}\t{'TRUE' if cookie['secure'] else 'FALSE'}\t{cookie['expires'] if cookie['expires'] else 0}\t{cookie['name']}\t{cookie['value']}\n")
+            
+            logger.info("Cookies успешно обновлены")
+            browser.close()
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении cookies: {str(e)}")
+
+# Инициализация планировщика
+scheduler = BackgroundScheduler()
+scheduler.add_job(update_youtube_cookies, 'interval', minutes=15)  # Обновление каждые 15 минут
+scheduler.start()
 
 @app.route('/')
 def index():
@@ -41,18 +74,19 @@ def download():
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Базовые настройки для yt-dlp
+    # Настройки для yt-dlp
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
         'ffmpeg_location': '/usr/bin/ffmpeg',
         'cookiefile': COOKIES_FILE,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
         'http_headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.youtube.com/',  # Добавляем Referer для эмуляции браузера
         },
-        'verbose': True,  # Для отладки в логах
+        'verbose': True,
     }
 
     if format == 'mp4':
