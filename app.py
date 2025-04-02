@@ -35,7 +35,7 @@ if not GOOGLE_USERNAME or not GOOGLE_PASSWORD:
 def update_youtube_cookies():
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--ignore-certificate-errors'])  # Игнорируем ошибки сертификатов
+            browser = p.chromium.launch(headless=True, args=['--ignore-certificate-errors'])
             proxy_settings = None
             if STATIC_PROXY:
                 if '@' in STATIC_PROXY:
@@ -54,29 +54,34 @@ def update_youtube_cookies():
             context = browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
                 proxy=proxy_settings,
-                ignore_https_errors=True  # Игнорируем ошибки HTTPS
+                ignore_https_errors=True
             )
             page = context.new_page()
 
             logger.info("Переход на страницу входа Google")
-            page.goto('https://accounts.google.com/signin', wait_until='domcontentloaded', timeout=60000)
+            page.goto('https://accounts.google.com/signin', wait_until='domcontentloaded', timeout=120000)
             page.wait_for_timeout(5000)
 
             # Ввод логина
             logger.info("Ввод логина")
-            page.fill('input[type="email"]', GOOGLE_USERNAME, timeout=60000)
-            page.click('button:has-text("Далее")', timeout=60000)
+            email_input = page.locator('input[type="email"], input#identifierId')  # Более гибкий селектор
+            if not email_input.is_visible(timeout=120000):
+                logger.error("Поле ввода email не найдено")
+                page.screenshot(path="debug_login_page.png")  # Сохраняем скриншот для отладки
+                raise Exception("Поле ввода email не отображается")
+            email_input.fill(GOOGLE_USERNAME, timeout=120000)
+            page.click('button:has-text("Далее")', timeout=120000)
             page.wait_for_timeout(5000)
 
             # Ввод пароля
             logger.info("Ввод пароля")
-            page.fill('input[type="password"]', GOOGLE_PASSWORD, timeout=60000)
-            page.click('button:has-text("Далее")', timeout=60000)
+            page.fill('input[type="password"]', GOOGLE_PASSWORD, timeout=120000)
+            page.click('button:has-text("Далее")', timeout=120000)
             page.wait_for_timeout(10000)
 
             # Переход на YouTube
             logger.info("Переход на YouTube")
-            page.goto('https://www.youtube.com', wait_until='domcontentloaded', timeout=60000)
+            page.goto('https://www.youtube.com', wait_until='domcontentloaded', timeout=120000)
             page.wait_for_timeout(5000)
 
             # Сохраняем cookies
@@ -90,6 +95,8 @@ def update_youtube_cookies():
             browser.close()
     except Exception as e:
         logger.error(f"Ошибка при обновлении cookies: {str(e)}")
+        if os.path.exists("debug_login_page.png"):
+            logger.info("Скриншот страницы сохранен как debug_login_page.png")
 
 # Инициализация планировщика
 scheduler = BackgroundScheduler()
@@ -127,7 +134,7 @@ def download():
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Настройки для yt-dlp с использованием статического прокси из .env
+    # Настройки для yt-dlp
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
@@ -139,7 +146,8 @@ def download():
             'Accept-Language': 'en-US,en;q=0.5',
             'Referer': 'https://www.youtube.com/',
         },
-        'proxy': STATIC_PROXY,  # Используем статический прокси из .env
+        'proxy': STATIC_PROXY,
+        'no_check_certificate': True,  # Отключаем проверку SSL
         'verbose': True,
         'retries': 10,
         'sleep_interval': 5,
