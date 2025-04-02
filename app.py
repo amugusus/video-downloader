@@ -35,7 +35,7 @@ if not GOOGLE_USERNAME or not GOOGLE_PASSWORD:
 def update_youtube_cookies():
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=['--ignore-certificate-errors'])  # Игнорируем ошибки сертификатов
             proxy_settings = None
             if STATIC_PROXY:
                 if '@' in STATIC_PROXY:
@@ -53,7 +53,8 @@ def update_youtube_cookies():
                 
             context = browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                proxy=proxy_settings
+                proxy=proxy_settings,
+                ignore_https_errors=True  # Игнорируем ошибки HTTPS
             )
             page = context.new_page()
 
@@ -120,21 +121,13 @@ def download():
         logger.error("FFmpeg не найден")
         return jsonify({'error': 'FFmpeg не установлен или не найден'}), 500
 
-    # Получаем IP-адрес клиента из заголовков запроса
-    client_ip = request.remote_addr
-    logger.info(f"IP-адрес клиента: {client_ip}")
-
-    # Формируем прокси на основе IP клиента (предполагаем, что клиентский IP может быть использован как HTTP-прокси)
-    # Примечание: большинство клиентов не предоставляют прокси-сервер, поэтому это может не сработать напрямую
-    client_proxy = f"http://{client_ip}:80"  # Порт 80 по умолчанию, можно изменить
-
     download_dir = 'downloads'
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
     output_template = f'{download_dir}/%(title)s.%(ext)s'
 
-    # Настройки для yt-dlp с использованием IP клиента как прокси
+    # Настройки для yt-dlp с использованием статического прокси из .env
     ydl_opts = {
         'outtmpl': output_template,
         'noplaylist': True,
@@ -146,7 +139,7 @@ def download():
             'Accept-Language': 'en-US,en;q=0.5',
             'Referer': 'https://www.youtube.com/',
         },
-        'proxy': client_proxy,  # Используем IP клиента как прокси
+        'proxy': STATIC_PROXY,  # Используем статический прокси из .env
         'verbose': True,
         'retries': 10,
         'sleep_interval': 5,
